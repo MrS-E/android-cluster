@@ -37,6 +37,15 @@ android {
     buildFeatures {
         compose = true
     }
+    packaging {
+        // The QEMU engine ships as jniLibs/<abi>/libqemu-system-arm.so (Android
+        // only allows exec() from nativeLibraryDir). Legacy packaging keeps the
+        // file uncompressed in the APK and extracts it at install time, which is
+        // what makes it executable at runtime.
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {

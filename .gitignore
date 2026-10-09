@@ -13,3 +13,5 @@
 .externalNativeBuild
 .cxx
 local.properties
+# Generated QEMU engine binaries (large; build with `./gradlew buildQemuArm64`).
+/app/src/main/jniLibs
