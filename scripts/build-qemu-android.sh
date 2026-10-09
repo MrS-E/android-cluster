@@ -384,8 +384,14 @@ EOF
     # the serial console and slirp user networking (hostfwd).
     (
         cd "$build_dir"
+        # QEMU's configure derives its pkg-config from `${cross_prefix}pkg-config`
+        # (i.e. <ndk>/toolchains/llvm/prebuilt/<tag>/bin/<triple>-pkg-config),
+        # which the NDK does not ship — the build then fails to find glib-2.0.
+        # PKG_CONFIG takes precedence over that default, so point it at the host
+        # pkg-config (pkgconf); the cross-file wiring of PKG_CONFIG_LIBDIR makes
+        # it report the target GLib/pixman/slirp we just built into $PREFIX.
         CC="$CC" CXX="$CXX" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" NM="$NM" \
-        CFLAGS="$qemu_cflags" CXXFLAGS="$qemu_cflags" \
+        CFLAGS="$qemu_cflags" CXXFLAGS="$qemu_cflags" PKG_CONFIG="$PKG_CONFIG_BIN" \
         "$qemu_dir/configure" \
             --cross-prefix="$BIN/${TRIPLE}${API_LEVEL}-" \
             --python="$VENV_PYTHON" \

@@ -44,8 +44,28 @@ android {
         // what makes it executable at runtime.
         jniLibs {
             useLegacyPackaging = true
+            // The engine is already stripped by the cross-compile; AGP stripping
+            // it again only produces a "Unable to strip ..." warning.
+            keepDebugSymbols += "**/libqemu-system-arm.so"
         }
     }
+}
+
+// The app executes the engine from jniLibs/<abi>/libqemu-system-arm.so, so a
+// normal build also builds it (see `buildQemuArm64` in the root build). This
+// requires an Android NDK and network access on the first run; pass
+// `-PskipQemu=true` to build without an engine (e.g. on a machine without an
+// NDK, or for a UI-only build).
+val skipQemu = providers.gradleProperty("skipQemu").orNull?.toBoolean() == true
+if (!skipQemu) {
+    val qemuEngine = rootProject.tasks.named("buildQemuArm64")
+    tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }
+        .configureEach {
+            description = "$description (packages the QEMU engine built by :buildQemuArm64)"
+            dependsOn(qemuEngine)
+        }
+} else {
+    logger.lifecycle("QEMU engine build skipped (-PskipQemu=true); the VM will report 'engine not installed'.")
 }
 
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {

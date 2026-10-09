@@ -1,3 +1,4 @@
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.internal.os.OperatingSystem
 
 // Top-level build file where you can add configuration options common to all sub-projects/modules.
@@ -19,6 +20,22 @@ plugins {
 // ---------------------------------------------------------------------------
 val qemuAndroidScript = layout.projectDirectory.file("scripts/build-qemu-android.sh")
 val qemuJniLibsDir = layout.projectDirectory.dir("app/src/main/jniLibs")
+val qemuBinaryName = "libqemu-system-arm.so"
+
+fun qemuBinary(abi: String) = qemuJniLibsDir.file("$abi/$qemuBinaryName").asFile
+
+// Environment overrides understood by the build script that change the produced
+// binary. Declaring them as inputs means bumping e.g. QEMU_VERSION re-runs the
+// cross-compile instead of silently reusing the previous engine.
+val qemuBuildOverrides = listOf(
+    "QEMU_VERSION",
+    "GLIB_VERSION",
+    "PIXMAN_VERSION",
+    "FFI_VERSION",
+    "PCRE2_VERSION",
+    "SLIRP_VERSION",
+    "API_LEVEL",
+)
 
 fun registerQemuBuildTask(name: String, abi: String, description: String) =
     tasks.register<Exec>(name) {
@@ -27,9 +44,17 @@ fun registerQemuBuildTask(name: String, abi: String, description: String) =
         val script = qemuAndroidScript.asFile
         workingDir = rootDir
         commandLine("bash", script.absolutePath, abi)
-        // The cross-compile is heavy and already incremental; never treat it as
-        // up-to-date or the engine could be silently skipped.
-        outputs.upToDateWhen { false }
+
+        // Incremental: the (slow) cross-compile is skipped while the script, the
+        // version overrides and the produced binary are unchanged. `cleanQemu`
+        // or deleting the binary forces a rebuild.
+        inputs.file(qemuAndroidScript).withPathSensitivity(PathSensitivity.RELATIVE)
+        inputs.property("abi", abi)
+        qemuBuildOverrides.forEach { key ->
+            inputs.property(key, providers.environmentVariable(key).orElse(""))
+        }
+        outputs.file(qemuBinary(abi))
+
         standardOutput = System.out
         errorOutput = System.err
         doFirst {
@@ -68,11 +93,13 @@ tasks.register("verifyQemu") {
     group = "qemu"
     description = "Fails unless the required QEMU engine binary (arm64-v8a) is present."
 
+    dependsOn(buildQemuArm64)
     val requiredAbis = listOf("arm64-v8a")
     val optionalAbis = listOf("armeabi-v7a")
     val jniLibs = qemuJniLibsDir.asFile
-    val binaryName = "libqemu-system-arm.so"
+    val binaryName = qemuBinaryName
 
+    outputs.upToDateWhen { false }
     doLast {
         val missing = requiredAbis.filter { !File(jniLibs, "$it/$binaryName").isFile }
         if (missing.isNotEmpty()) {

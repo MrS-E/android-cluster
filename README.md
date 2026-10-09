@@ -23,13 +23,41 @@ executable is packaged as a `jniLibs` entry named `libqemu-system-arm.so` and
 extracted at install time (`android:extractNativeLibs` stays enabled via
 `jniLibs.useLegacyPackaging = true` in `app/build.gradle.kts`).
 
+**The engine is built automatically as part of the normal app build.** Every
+`assemble<Variant>` / `bundle<Variant>` / run depends on `buildQemuArm64`, whose
+output lands in `app/src/main/jniLibs/arm64-v8a/` right before the variant's
+JNI folders are merged, so the resulting APK always contains the engine.
+
+```bash
+./gradlew assembleDebug      # builds + packages the engine
+./gradlew :app:installDebug  # same, via the task graph
+```
+
+The task is incremental: while the script, the version overrides and the binary
+are unchanged it reports `UP-TO-DATE` and costs nothing. Use `cleanQemu` to force
+a rebuild.
+
+Standalone engine tasks:
+
 ```bash
 ./gradlew buildQemuArm64     # arm64-v8a only (recommended)
 ./gradlew buildQemuArmV7     # armeabi-v7a (optional, doubles build time)
 ./gradlew buildQemu          # both ABIs
-./gradlew verifyQemu         # fails if the required binary is missing
+./gradlew verifyQemu         # builds the engine, then fails if the binary is missing
 ./gradlew cleanQemu          # removes the generated binaries
 ```
+
+### Building without an NDK
+
+The cross-compile needs a host toolchain, so builds on machines without an NDK
+(or CI images that only check the UI) can opt out:
+
+```bash
+./gradlew assembleDebug -PskipQemu=true
+```
+
+The APK then ships without an engine and the app reports the "engine not
+installed" state instead of starting the VM.
 
 The task invokes `scripts/build-qemu-android.sh`, which downloads and
 cross-compiles the full dependency chain — libffi, pcre2, GLib, pixman, libslirp
