@@ -9,6 +9,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.Dispatchers
+import java.io.File
 import javax.inject.Singleton
 
 @Module
@@ -19,6 +20,8 @@ object AppModule {
     @Singleton
     fun provideVmEngine(@ApplicationContext context: Context): VmEngine = QemuEngine(
         nativeLibraryDir = context.applicationInfo.nativeLibraryDir,
+        qemuDataDirectory = File(context.filesDir, "qemu"),
+        assetManager = context.assets,
         ioDispatcher = Dispatchers.IO,
     )
 }

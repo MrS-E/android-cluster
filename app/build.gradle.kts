@@ -38,7 +38,7 @@ android {
         compose = true
     }
     packaging {
-        // The QEMU engine ships as jniLibs/<abi>/libqemu-system-arm.so (Android
+        // The QEMU engine ships as jniLibs/<abi>/libqemu-system-aarch64.so (Android
         // only allows exec() from nativeLibraryDir). Legacy packaging keeps the
         // file uncompressed in the APK and extracts it at install time, which is
         // what makes it executable at runtime.
@@ -46,12 +46,19 @@ android {
             useLegacyPackaging = true
             // The engine is already stripped by the cross-compile; AGP stripping
             // it again only produces a "Unable to strip ..." warning.
-            keepDebugSymbols += "**/libqemu-system-arm.so"
+            keepDebugSymbols += "**/libqemu-system-aarch64.so"
+        }
+    }
+    sourceSets {
+        getByName("main") {
+            assets.directories.add(
+                project.layout.buildDirectory.dir("generated/qemuAssets").get().asFile.absolutePath,
+            )
         }
     }
 }
 
-// The app executes the engine from jniLibs/<abi>/libqemu-system-arm.so, so a
+// The app executes the engine from jniLibs/<abi>/libqemu-system-aarch64.so, so a
 // normal build also builds it (see `buildQemuArm64` in the root build). This
 // requires an Android NDK and network access on the first run; pass
 // `-PskipQemu=true` to build without an engine (e.g. on a machine without an
@@ -59,11 +66,17 @@ android {
 val skipQemu = providers.gradleProperty("skipQemu").orNull?.toBoolean() == true
 if (!skipQemu) {
     val qemuEngine = rootProject.tasks.named("buildQemuArm64")
-    tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }
+    tasks.matching {
+        it.name.startsWith("merge") &&
+            (it.name.endsWith("JniLibFolders") || it.name.endsWith("Assets"))
+    }
         .configureEach {
-            description = "$description (packages the QEMU engine built by :buildQemuArm64)"
+            description = "$description (packages the QEMU engine and runtime assets built by :buildQemuArm64)"
             dependsOn(qemuEngine)
         }
+    tasks.matching { it.name.contains("lint", ignoreCase = true) }.configureEach {
+        dependsOn(qemuEngine)
+    }
 } else {
     logger.lifecycle("QEMU engine build skipped (-PskipQemu=true); the VM will report 'engine not installed'.")
 }

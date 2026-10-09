@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #
-# Cross-compiles an Android build of qemu-system-arm (ARM `virt` machine,
+# Cross-compiles an Android build of qemu-system-aarch64 (ARM `virt` machine,
 # headless serial console, slirp user-mode networking with hostfwd) and installs
-# it as app/src/main/jniLibs/<abi>/libqemu-system-arm.so.
+# it as app/src/main/jniLibs/<abi>/libqemu-system-aarch64.so, along with the
+# required AArch64 UEFI and virtio ROM data files.
 #
 # Why a fake `.so`: Android only allows exec() from the app's nativeLibraryDir
 # on targetSdk 29+, so the QEMU executable is packaged under jniLibs and
@@ -22,7 +23,7 @@
 # FFI_VERSION, PCRE2_VERSION, SLIRP_VERSION, API_LEVEL, JOBS, WORK_DIR,
 # CACHE_DIR.
 #
-# Requirements: bash, curl, tar, git, python3 and an Android NDK (r26+
+# Requirements: bash, curl, tar, git, python3, bzip2, gzip and an Android NDK (r26+
 # recommended); network access is needed to download sources (QEMU fetches
 # libslirp/dtc via git at configure time). Meson/Ninja are installed
 # automatically into a private virtualenv.
@@ -41,6 +42,7 @@ SLIRP_VERSION="${SLIRP_VERSION:-4.8.0}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 JNI_LIBS="$PROJECT_ROOT/app/src/main/jniLibs"
+QEMU_ASSETS_DIR="${QEMU_ASSETS_DIR:-$PROJECT_ROOT/app/build/generated/qemuAssets}"
 
 log() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 die() { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -138,7 +140,7 @@ TARGET_CFLAGS="-fPIC -O2 -fstack-protector-strong --sysroot=$SYSROOT -DANDROID"
 # Host prerequisites. Meson/Ninja come from the private virtualenv; pkg-config
 # must be provided by the host (pkgconf is accepted).
 # ---------------------------------------------------------------------------
-for tool in curl tar python3; do
+for tool in curl tar python3 bzip2 gzip; do
     command -v "$tool" >/dev/null 2>&1 || die "Required tool '$tool' not found in PATH."
 done
 PYTHON="$(command -v python3)"
@@ -325,7 +327,7 @@ build_deps() {
 # ---------------------------------------------------------------------------
 # libslirp (static): QEMU's user-mode networking (hostfwd) backend. Building it
 # into the prefix means `dependency('slirp')` resolves to a static archive, so
-# qemu-system-arm does not depend on a libslirp.so that does not exist on
+# qemu-system-aarch64 does not depend on a libslirp.so that does not exist on
 # Android.
 # ---------------------------------------------------------------------------
 build_slirp() {
@@ -377,7 +379,7 @@ static inline int shm_unlink(const char *name)
 #endif
 EOF
 
-    log "Building qemu-system-arm $QEMU_VERSION ($ABI, API $API_LEVEL)"
+    log "Building qemu-system-aarch64 $QEMU_VERSION ($ABI, API $API_LEVEL)"
     fetch "https://download.qemu.org/qemu-$QEMU_VERSION.tar.xz" "qemu.tar.xz"
     if [[ ! -d "$SRC/qemu-$QEMU_VERSION" ]]; then
         tar -xJf "$FETCHED_PATH" -C "$SRC"
@@ -386,8 +388,8 @@ EOF
     fi
 
     local qemu_dir="$SRC/qemu-$QEMU_VERSION"
-    # Keep QEMU's build tree outside the source dir so repeated runs are
-    # incremental and a cached checkout is not polluted.
+    # Use a fresh out-of-tree build to avoid stale Meson configuration. Gradle's
+    # declared outputs skip this script on unchanged normal app builds.
     local build_dir="$WORK_DIR/qemu-build"
     rm -rf "$build_dir"
     mkdir -p "$build_dir"
@@ -413,7 +415,7 @@ EOF
         "$qemu_dir/configure" \
             --cross-prefix="$BIN/${TRIPLE}${API_LEVEL}-" \
             --python="$VENV_PYTHON" \
-            --target-list=arm-softmmu \
+            --target-list=aarch64-softmmu \
             --prefix="$PREFIX" \
             --enable-slirp --enable-iconv \
             --disable-docs --disable-tools --disable-guest-agent --disable-werror \
@@ -426,8 +428,8 @@ EOF
             --disable-libvduse --disable-vduse-blk-export --disable-vfio-user-server \
             --disable-vhost-user --disable-vhost-kernel --disable-vhost-net \
             --disable-vhost-crypto --disable-vhost-vdpa --disable-vhost-user-blk-server
-        "$NINJA" -C "$build_dir" -j"$JOBS" qemu-system-arm
-        [[ -f "$build_dir/qemu-system-arm" ]] || die "qemu-system-arm was not produced"
+        "$NINJA" -C "$build_dir" -j"$JOBS" qemu-system-aarch64
+        [[ -f "$build_dir/qemu-system-aarch64" ]] || die "qemu-system-aarch64 was not produced"
     )
 }
 
@@ -435,11 +437,14 @@ EOF
 # Install into jniLibs and sanity-check the result.
 # ---------------------------------------------------------------------------
 install_binary() {
-    local src_bin="$WORK_DIR/qemu-build/qemu-system-arm"
+    local src_bin="$WORK_DIR/qemu-build/qemu-system-aarch64"
     local dest_dir="$JNI_LIBS/$ABI"
-    local dest="$dest_dir/libqemu-system-arm.so"
+    local dest="$dest_dir/libqemu-system-aarch64.so"
 
     mkdir -p "$dest_dir"
+    for legacy_abi in arm64-v8a armeabi-v7a; do
+        rm -f "$JNI_LIBS/$legacy_abi/libqemu-system-arm.so"
+    done
     cp "$src_bin" "$dest"
     "$STRIP" --strip-unneeded "$dest" 2>/dev/null || true
     chmod 755 "$dest"
@@ -453,10 +458,38 @@ install_binary() {
     "$READELF" -d "$dest" | sed -n 's/.*Shared library: \[\(.*\)\]/    \1/p'
 }
 
+install_runtime_assets() {
+    [[ "$ABI" == "arm64-v8a" ]] || return
+
+    local source_dir="$SRC/qemu-$QEMU_VERSION/pc-bios"
+    local dest_dir="$QEMU_ASSETS_DIR/qemu"
+    local firmware source temporary asset
+    rm -rf "$dest_dir"
+    mkdir -p "$dest_dir"
+
+    for firmware in edk2-aarch64-code.fd edk2-arm-vars.fd; do
+        source="$source_dir/$firmware.bz2"
+        temporary="$dest_dir/$firmware.qemugz.tmp"
+        [[ -s "$source" ]] || die "Missing QEMU firmware source: $source"
+        bzip2 -dc "$source" | gzip -c > "$temporary"
+        [[ -s "$temporary" ]] || die "Failed to unpack QEMU firmware: $source"
+        mv "$temporary" "$dest_dir/$firmware.qemugz"
+    done
+
+    for asset in efi-virtio.rom edk2-licenses.txt README; do
+        source="$source_dir/$asset"
+        [[ -s "$source" ]] || die "Missing QEMU runtime asset: $source"
+        cp "$source" "$dest_dir/$asset"
+    done
+
+    log "Installed AArch64 firmware and virtio ROM assets in $dest_dir"
+}
+
 write_cross_file
 build_deps
 build_slirp
 build_qemu
 install_binary
+install_runtime_assets
 
 log "Done. Engine binary for $ABI is in $JNI_LIBS/$ABI"

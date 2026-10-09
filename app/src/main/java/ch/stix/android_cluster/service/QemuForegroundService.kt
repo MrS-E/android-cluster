@@ -51,10 +51,12 @@ class QemuForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.i(TAG, "Foreground service created")
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.i(TAG, "Start command received: action=${intent?.action}, startId=$startId, flags=$flags")
         when (intent?.action) {
             ACTION_STOP -> {
                 stopVm()
@@ -84,6 +86,7 @@ class QemuForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        Log.i(TAG, "Foreground service destroyed")
         serviceScope.cancel()
         releaseWakeLock()
         super.onDestroy()
@@ -111,6 +114,7 @@ class QemuForegroundService : Service() {
         if (observeJob?.isActive == true) return
         observeJob = serviceScope.launch {
             vmRepository.state.collect { state ->
+                Log.i(TAG, "VM state changed: $state")
                 when (state) {
                     is VmState.Running -> {
                         acquireWakeLock()
@@ -124,6 +128,7 @@ class QemuForegroundService : Service() {
     }
 
     private fun stopVm() {
+        Log.i(TAG, "Stop requested by notification action")
         vmRepository.stop()
         stopForegroundAndStopSelf()
     }
@@ -134,6 +139,7 @@ class QemuForegroundService : Service() {
     }
 
     private fun stopForegroundAndStopSelf() {
+        Log.i(TAG, "Removing foreground notification and stopping service")
         releaseWakeLock()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -208,11 +214,17 @@ class QemuForegroundService : Service() {
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
             setReferenceCounted(false)
             acquire()
+            Log.i(TAG, "Partial wake lock acquired: $WAKE_LOCK_TAG")
         }
     }
 
     private fun releaseWakeLock() {
-        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock?.let { lock ->
+            if (lock.isHeld) {
+                lock.release()
+                Log.i(TAG, "Partial wake lock released: $WAKE_LOCK_TAG")
+            }
+        }
         wakeLock = null
     }
 

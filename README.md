@@ -12,30 +12,36 @@ guest services to the local LAN through user-mode port forwarding.
 | `app/src/main/java/ch/stix/android_cluster/data` | Repositories: VM lifecycle, image import, settings, battery state. |
 | `app/src/main/java/ch/stix/android_cluster/service` | `QemuForegroundService` — hosts the VM, holds the wake lock, shows the notification. |
 | `app/src/main/java/ch/stix/android_cluster/ui` | Compose UI (`ClusterScreen`, `ConsolePanel`) and `ClusterViewModel`. |
-| `scripts/build-qemu-android.sh` | Cross-compiles `qemu-system-arm` for Android. |
-| `app/src/main/jniLibs/<abi>/libqemu-system-arm.so` | Build output (generated, not committed). |
+| `scripts/build-qemu-android.sh` | Cross-compiles `qemu-system-aarch64` for Android. |
+| `app/src/main/jniLibs/<abi>/libqemu-system-aarch64.so` | Build output (generated, not committed). |
 
 ## Building the QEMU engine
 
-The engine is a prebuilt `qemu-system-arm` cross-compiled with the Android NDK.
+The engine is a prebuilt `qemu-system-aarch64` cross-compiled with the Android NDK.
 Android only permits `exec()` from the app's `nativeLibraryDir`, so the QEMU
-executable is packaged as a `jniLibs` entry named `libqemu-system-arm.so` and
+executable is packaged as a `jniLibs` entry named `libqemu-system-aarch64.so` and
 extracted at install time (`android:extractNativeLibs` stays enabled via
 `jniLibs.useLegacyPackaging = true` in `app/build.gradle.kts`).
+The 64 MiB ARM64 UEFI images are gzip-compressed in APK assets and streamed
+into private storage only for QCOW2 boots; `efi-virtio.rom` is staged whenever a
+virtio PCI device is used.
 
 **The engine is built automatically as part of the normal app build.** Every
 `assemble<Variant>` / `bundle<Variant>` / run depends on `buildQemuArm64`, whose
 output lands in `app/src/main/jniLibs/arm64-v8a/` right before the variant's
-JNI folders are merged, so the resulting APK always contains the engine.
+JNI folders are merged; the generated firmware assets are added before asset
+merging, so the APK contains everything needed to boot an ARM64 disk.
 
 ```bash
 ./gradlew assembleDebug      # builds + packages the engine
 ./gradlew :app:installDebug  # same, via the task graph
 ```
 
-The task is incremental: while the script, the version overrides and the binary
-are unchanged it reports `UP-TO-DATE` and costs nothing. Use `cleanQemu` to force
-a rebuild.
+The task is incremental: while the script, the version overrides, the binary,
+and generated firmware assets are unchanged it reports `UP-TO-DATE` and costs
+nothing. `./gradlew clean` removes the generated firmware assets and makes the
+next app build rerun the QEMU task; use `cleanQemu` when intentionally removing
+the engine as well.
 
 Standalone engine tasks:
 
@@ -43,8 +49,8 @@ Standalone engine tasks:
 ./gradlew buildQemuArm64     # arm64-v8a only (recommended)
 ./gradlew buildQemuArmV7     # armeabi-v7a (optional, doubles build time)
 ./gradlew buildQemu          # both ABIs
-./gradlew verifyQemu         # builds the engine, then fails if the binary is missing
-./gradlew cleanQemu          # removes the generated binaries
+./gradlew verifyQemu         # builds the engine, then checks binary and firmware
+./gradlew cleanQemu          # removes the generated binary and firmware assets
 ```
 
 ### Building without an NDK
@@ -62,13 +68,15 @@ installed" state instead of starting the VM.
 The task invokes `scripts/build-qemu-android.sh`, which downloads and
 cross-compiles the full dependency chain — libffi, pcre2, GLib, pixman, libslirp
 and finally QEMU — all statically linked so the result depends only on bionic
-system libraries. Sources, dependencies and object files are cached in
-`~/.cache/qemu-android`, so only the first run is slow (~3–5 min per ABI);
-re-runs reuse everything.
+system libraries. Sources and static dependencies are cached in
+`~/.cache/qemu-android`. When Gradle reruns the task, it configures QEMU from a
+fresh out-of-tree build directory but reuses the cached sources and dependency
+libraries; the first cold build takes about 3–5 minutes per ABI.
 
 ### Requirements
 
-- `bash`, `curl`, `tar`, `git`, `python3` and `pkg-config` on the host.
+- `bash`, `curl`, `tar`, `git`, `python3`, `bzip2`, `gzip` and `pkg-config` on
+  the host.
   (`git` is used by QEMU's build to fetch `libslirp` and `dtc`.)
 - An Android NDK (r26+, tested with r30) discovered from `ANDROID_NDK_HOME`,
   `ANDROID_HOME`, `ANDROID_SDK_ROOT` or `local.properties`'s `sdk.dir`.
@@ -92,16 +100,24 @@ QEMU_VERSION=9.2.0 GLIB_VERSION=2.82.2 ./gradlew buildQemuArm64
 
 ## Running
 
-The VM needs a boot image. Import one (a small ARM Linux kernel image for the
-`virt` machine) through the app's file picker; it is copied into app-private
-storage and booted with:
+The VM needs a boot image. Import an AArch64 Linux kernel or a disk image through
+the app's file picker; it is copied into app-private storage. Files ending in
+`.qcow2` are attached as virtual disks and booted through bundled UEFI firmware.
+Other files are treated as Linux kernels. The kernel command uses:
 
 ```
--M virt -cpu cortex-a15 -m 256 -nographic -serial mon:stdio \
+-M virt -cpu cortex-a57 -m 256 -nographic -serial mon:stdio \
 -kernel <image> -append "console=ttyAMA0" \
 -netdev user,id=n0,hostfwd=tcp::<hostPort>-:<guestPort> \
 -device virtio-net-pci,netdev=n0
 ```
+
+For a `.qcow2` disk, the app attaches it as `virtio-blk-pci` and uses the
+generated `edk2-aarch64-code.fd` / `edk2-arm-vars.fd` firmware files. QEMU start,
+stderr, and exit details are logged under `QemuEngine`; service and wake-lock
+events are logged under `QemuForegroundService`.
+QCOW2 boots allocate at least 1 GiB of guest memory because the Debian image's
+initramfs panics at the 256 MiB kernel-image default.
 
 Each configured port mapping becomes one `hostfwd` rule, so a mapping like
 `31415 → 22` makes the guest SSH reachable from any LAN device at
