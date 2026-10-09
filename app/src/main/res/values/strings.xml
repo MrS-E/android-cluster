@@ -1,0 +1,60 @@
+<resources>
+    <string name="app_name">android-cluster</string>
+
+    <!-- Foreground service notification -->
+    <string name="vm_notification_channel_name">VM Runtime</string>
+    <string name="vm_notification_channel_description">Shows the state of the virtual machine running in the background.</string>
+    <string name="vm_notification_title">VM running</string>
+    <string name="vm_notification_title_stopped">VM stopped</string>
+    <string name="vm_notification_text">The virtual machine is running in the background. Keep the device connected to power for long sessions.</string>
+    <string name="vm_notification_text_stopped">The virtual machine has stopped.</string>
+    <string name="vm_notification_action_stop">Stop VM</string>
+
+    <!-- Charging hint -->
+    <string name="charging_hint_plugged">Device is charging — continuous VM operation is intended for a powered device.</string>
+    <string name="charging_hint_unplugged">Device is on battery — connect a charger so the VM can run for extended periods.</string>
+
+    <!-- Screen -->
+    <string name="screen_title">Android Cluster</string>
+    <string name="screen_subtitle">Run a small VM in the background and reach it from your LAN.</string>
+
+    <!-- Status card -->
+    <string name="status_card_title">Virtual machine</string>
+    <string name="status_idle">Idle — select an image and start the VM.</string>
+    <string name="status_running">Running in the background.</string>
+    <string name="status_stopped">Stopped (exit code %1$d).</string>
+    <string name="status_failed">Failed: %1$s</string>
+    <string name="status_engine_missing">QEMU engine binary is not installed in this build.</string>
+    <string name="status_no_image">No image selected — import one to start the VM.</string>
+    <string name="action_start">Start VM</string>
+    <string name="action_stop">Stop VM</string>
+
+    <!-- Battery card -->
+    <string name="battery_card_title">Battery optimization</string>
+    <string name="battery_exempt">The app is exempt from battery optimization.</string>
+    <string name="battery_not_exempt">The app is subject to battery optimization and may be killed.</string>
+    <string name="action_request_exemption">Disable battery optimization</string>
+
+    <!-- Images card -->
+    <string name="images_card_title">VM image</string>
+    <string name="images_empty">No image imported yet.</string>
+    <string name="action_import_image">Import image</string>
+    <string name="action_delete_image">Delete</string>
+    <string name="image_size_mb">%1$s MB</string>
+    <string name="image_size_kb">%1$s KB</string>
+
+    <!-- Ports card -->
+    <string name="ports_card_title">Port mappings</string>
+    <string name="ports_empty">No port mappings. Guest services are not reachable from the LAN.</string>
+    <string name="ports_hint">Forward an Android (host) port to a port inside the VM.</string>
+    <string name="ports_host_label">Host port</string>
+    <string name="ports_guest_label">Guest port</string>
+    <string name="action_add_mapping">Add mapping</string>
+    <string name="mapping_arrow">%1$d → %2$d</string>
+
+    <!-- Console card -->
+    <string name="console_card_title">Serial console</string>
+    <string name="console_empty">Console output will appear here once the VM starts.</string>
+    <string name="console_input_label">Send input to the guest</string>
+    <string name="action_send">Send</string>
+</resources>
