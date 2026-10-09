@@ -188,6 +188,20 @@ PKG_CONFIG_PATH_TARGET="$PREFIX/lib/pkgconfig:$PREFIX/share/pkgconfig"
 export PKG_CONFIG_PATH="$PKG_CONFIG_PATH_TARGET"
 export PKG_CONFIG_LIBDIR="$PKG_CONFIG_PATH_TARGET"
 
+# pixman's Android ARM code path (USE_ARM_SIMD / USE_ARM_NEON, i.e. the
+# 32-bit ARM build) includes <cpu-features.h>, which bionic does not ship.
+# The NDK bundles the sources under sources/android/cpufeatures; pointing
+# pixman at them keeps the ARM SIMD/NEON backends. On an NDK without them,
+# fall back to disabling those backends — the headless serial console this
+# app targets does not need them.
+PIXMAN_EXTRA_ARGS=()
+if [[ -f "$NDK_DIR/sources/android/cpufeatures/cpu-features.h" ]]; then
+    PIXMAN_EXTRA_ARGS+=("-Dcpu-features-path=$NDK_DIR/sources/android/cpufeatures")
+else
+    log "NDK has no sources/android/cpufeatures; disabling pixman ARM SIMD/NEON"
+    PIXMAN_EXTRA_ARGS+=("-Darm-simd=disabled" "-Dneon=disabled")
+fi
+
 # ---------------------------------------------------------------------------
 # Meson cross file shared by pixman and GLib.
 # ---------------------------------------------------------------------------
@@ -251,10 +265,13 @@ build_deps() {
             CC="$CC" CXX="$CXX" AR="$AR" RANLIB="$RANLIB" STRIP="$STRIP" \
             CFLAGS="$TARGET_CFLAGS" LDFLAGS="--sysroot=$SYSROOT" \
                 ./configure --host="$TRIPLE" --prefix="$PREFIX" \
-                    --enable-static --disable-shared --enable-jit \
-                    --disable-pcre2grep --disable-pcre2test
-            make -j"$JOBS"
-            make install
+                    --enable-static --disable-shared --enable-jit
+            # pcre2 has no --disable-pcre2grep/--disable-pcre2test options; the
+            # command-line `bin_PROGRAMS=` override skips the standalone
+            # pcre2grep/pcre2test tools (only the libraries are needed) without
+            # the unrecognized-option warnings.
+            make -j"$JOBS" bin_PROGRAMS=
+            make install bin_PROGRAMS=
         )
     else
         log "pcre2 already built"
@@ -271,7 +288,8 @@ build_deps() {
             "$MESON" setup build \
                 --cross-file "$WORK_DIR/cross-$ABI.txt" \
                 --prefix "$PREFIX" --buildtype release --default-library static \
-                -Dtests=disabled -Ddemos=disabled -Dgtk=disabled -Dlibpng=disabled
+                -Dtests=disabled -Ddemos=disabled -Dgtk=disabled -Dlibpng=disabled \
+                "${PIXMAN_EXTRA_ARGS[@]}"
             "$NINJA" -C build -j"$JOBS"
             "$NINJA" -C build install
         )
