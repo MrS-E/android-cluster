@@ -173,6 +173,7 @@ private fun ClusterScreenPreviewContent() {
         Column(
             modifier = Modifier
                 .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
                 .padding(Dimens.medium),
             verticalArrangement = Arrangement.spacedBy(Dimens.medium),
         ) {
@@ -192,6 +193,24 @@ private fun ClusterScreenPreviewContent() {
                 onAdd = { _, _ -> },
                 onRemove = {},
             )
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(Dimens.medium),
+                    verticalArrangement = Arrangement.spacedBy(Dimens.small),
+                ) {
+                    Text(
+                        text = stringResource(R.string.console_card_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    ConsolePanel(
+                        lines = listOf(
+                            "[    0.000000] Booting Linux on physical CPU 0x0",
+                            "login: _",
+                        ),
+                        onSend = {},
+                    )
+                }
+            }
         }
     }
 }

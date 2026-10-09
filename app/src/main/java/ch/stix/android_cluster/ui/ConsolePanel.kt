@@ -4,7 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -48,9 +48,12 @@ fun ConsolePanel(
     }
 
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(Dimens.small)) {
+        // The console lives inside a vertically scrollable parent, so the list
+        // must be given a bounded height — an unbounded (infinite) max height
+        // would make LazyColumn throw at measure time.
         val outputModifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = Dimens.consoleHeight)
+            .height(Dimens.consoleHeight)
         if (lines.isEmpty()) {
             Text(
                 text = stringResource(R.string.console_empty),
