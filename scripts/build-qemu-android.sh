@@ -364,6 +364,13 @@ build_qemu() {
 #define QEMU_ANDROID_SHIM_H
 #include <errno.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+/* bionic's <sys/stat.h> defines st_[amc]time_nsec as compatibility macros
+ * expanding to st_[amc]tim.tv_nsec, which collide with V9fsStatDotl member
+ * names in QEMU's 9pfs headers (fsdev/9p-marshal.h). */
+#undef st_atime_nsec
+#undef st_mtime_nsec
+#undef st_ctime_nsec
 static inline int shm_open(const char *name, int oflag, mode_t mode)
 {
     (void)name; (void)oflag; (void)mode;
@@ -423,7 +430,7 @@ EOF
             --disable-opengl --disable-libudev --disable-libusb --disable-brlapi \
             --disable-smartcard --disable-libnfs --disable-glusterfs --disable-rdma \
             --disable-fuse --disable-fuse-lseek --disable-bpf --disable-af-xdp \
-            --disable-keyring --disable-attr --disable-cap-ng --disable-libssh \
+            --disable-keyring --enable-attr --enable-virtfs --disable-cap-ng --disable-libssh \
             --disable-curl --disable-multiprocess \
             --disable-libvduse --disable-vduse-blk-export --disable-vfio-user-server \
             --disable-vhost-user --disable-vhost-kernel --disable-vhost-net \
