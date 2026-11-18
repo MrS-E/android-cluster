@@ -1,5 +1,6 @@
 package ch.stix.android_cluster.engine
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
@@ -8,7 +9,10 @@ import kotlinx.serialization.Serializable
  * [guestPort] inside the VM, making guest services reachable from the LAN.
  */
 @Serializable
-data class PortMapping(val hostPort: Int, val guestPort: Int) {
+data class PortMapping(
+    @SerialName("hostPort") val hostPort: Int,
+    @SerialName("guestPort") val guestPort: Int,
+) {
     init {
         require(hostPort in 1..65535) { "hostPort must be in 1..65535, was $hostPort" }
         require(guestPort in 1..65535) { "guestPort must be in 1..65535, was $guestPort" }
@@ -36,4 +40,10 @@ data class VmConfig(
     val imagePath: String,
     val memoryMb: Int = 256,
     val portMappings: List<PortMapping> = emptyList(),
-)
+    val storagePath: String? = null,
+    val storageMountTag: String = DEFAULT_STORAGE_MOUNT_TAG,
+) {
+    companion object {
+        const val DEFAULT_STORAGE_MOUNT_TAG = "host0"
+    }
+}

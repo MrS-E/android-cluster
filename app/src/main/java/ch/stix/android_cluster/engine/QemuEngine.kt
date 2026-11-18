@@ -80,7 +80,8 @@ class QemuEngine(
                     "Start requested: arch=${config.arch}, image=${image.absolutePath}, " +
                         "exists=${image.exists()}, readable=${image.canRead()}, sizeBytes=${image.length()}, " +
                         "requestedMemoryMb=${config.memoryMb}, effectiveMemoryMb=${memoryMbFor(config)}, " +
-                        "portMappings=${config.portMappings}",
+                        "portMappings=${config.portMappings}, storagePath=${config.storagePath}, " +
+                        "storageMountTag=${config.storageMountTag}",
                 )
                 if (!image.isFile || !image.canRead()) {
                     val message = "VM image is missing or unreadable: ${image.absolutePath}"
@@ -88,6 +89,18 @@ class QemuEngine(
                     _serialOutput.tryEmit(message)
                     _state.value = VmState.Failed(message)
                     return@launch
+                }
+
+                val storagePath = config.storagePath?.takeIf { it.isNotBlank() }
+                if (storagePath != null) {
+                    val storageDir = File(storagePath)
+                    if (!ensureStorageDirectory(storageDir)) {
+                        val message = "VM storage directory is unavailable or not writable: ${storageDir.absolutePath}"
+                        Log.e(TAG, message)
+                        _serialOutput.tryEmit(message)
+                        _state.value = VmState.Failed(message)
+                        return@launch
+                    }
                 }
 
                 val runtimeAssets = requiredRuntimeAssets(config)
@@ -215,6 +228,7 @@ class QemuEngine(
 
     private fun buildArmCommand(binary: String, config: VmConfig): List<String> = buildList {
         val isQcow2 = isQcow2Image(config.imagePath)
+        val storagePath = config.storagePath?.takeIf { it.isNotBlank() }
         add(binary)
         add("-M"); add("virt")
         add("-cpu"); add("cortex-a57")
@@ -237,7 +251,7 @@ class QemuEngine(
             add("if=none,file=${escapeQemuOption(config.imagePath)},format=qcow2,id=hd0")
             add("-device"); add("virtio-blk-pci,drive=hd0,bootindex=0")
         } else {
-            if (config.portMappings.isNotEmpty()) {
+            if (config.portMappings.isNotEmpty() || storagePath != null) {
                 add("-L"); add(qemuDataDirectory.absolutePath)
             }
             add("-kernel"); add(config.imagePath)
@@ -249,6 +263,12 @@ class QemuEngine(
             }
             add("-netdev"); add("user,id=n0,$hostfwd")
             add("-device"); add("virtio-net-pci,netdev=n0")
+        }
+        if (storagePath != null) {
+            add("-fsdev")
+            add("local,id=fsdev0,path=${escapeQemuOption(storagePath)},security_model=none")
+            add("-device")
+            add("virtio-9p-pci,fsdev=fsdev0,mount_tag=${escapeQemuOption(config.storageMountTag)}")
         }
     }
 
@@ -316,12 +336,13 @@ class QemuEngine(
         return digest.digest().joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
     }
 
-    private fun requiredRuntimeAssets(config: VmConfig): List<String> = buildList {
+    internal fun requiredRuntimeAssets(config: VmConfig): List<String> = buildList {
+        val hasStorage = !config.storagePath.isNullOrBlank()
         if (isQcow2Image(config.imagePath)) {
             add(EDK2_CODE_ASSET)
             add(EDK2_VARIABLES_ASSET)
         }
-        if (isQcow2Image(config.imagePath) || config.portMappings.isNotEmpty()) {
+        if (isQcow2Image(config.imagePath) || config.portMappings.isNotEmpty() || hasStorage) {
             add(EFI_VIRTIO_ROM_ASSET)
         }
     }
@@ -350,7 +371,14 @@ class QemuEngine(
         private const val EDK2_VARIABLES_FILE = "edk2-arm-vars.fd"
         private const val EDK2_CODE_ASSET = "qemu/$EDK2_CODE_FILE.qemugz"
         private const val EDK2_VARIABLES_ASSET = "qemu/$EDK2_VARIABLES_FILE.qemugz"
-        private const val EFI_VIRTIO_ROM_ASSET = "qemu/efi-virtio.rom"
+        internal const val EFI_VIRTIO_ROM_ASSET = "qemu/efi-virtio.rom"
+
+        internal fun ensureStorageDirectory(directory: File): Boolean {
+            if (!directory.exists() && !directory.mkdirs() && !directory.isDirectory) {
+                return false
+            }
+            return directory.isDirectory && directory.canRead() && directory.canWrite()
+        }
 
         internal fun isUefiFlashImageSizeValid(fileSizeBytes: Long): Boolean =
             fileSizeBytes == EDK2_FLASH_SIZE_BYTES

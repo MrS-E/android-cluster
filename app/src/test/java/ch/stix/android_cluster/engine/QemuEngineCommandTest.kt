@@ -7,7 +7,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.nio.file.Path
 
 class QemuEngineCommandTest {
 
@@ -81,6 +83,108 @@ class QemuEngineCommandTest {
 
         assertTrue(netdev.contains("hostfwd=tcp::31415-:22"))
         assertTrue(netdev.contains("hostfwd=tcp::8080-:80"))
+    }
+
+    @Test
+    fun `given storagePath on kernel image when buildCommand then attaches virtio 9p device and rom dir`() {
+        val config = VmConfig(
+            arch = VmArch.ARM,
+            imagePath = "/data/data/app/files/vm-images/alpine.img",
+            storagePath = "/data/data/app/files/vm-storage/alpine.img",
+        )
+
+        val command = engine.buildCommand(config)
+
+        val fsdevIndex = command.indexOf("-fsdev")
+        assertTrue(fsdevIndex >= 0)
+        assertEquals(
+            "local,id=fsdev0,path=/data/data/app/files/vm-storage/alpine.img,security_model=none",
+            command[fsdevIndex + 1],
+        )
+        assertTrue(command.contains("virtio-9p-pci,fsdev=fsdev0,mount_tag=host0"))
+        val romDirIndex = command.indexOf("-L")
+        assertTrue(romDirIndex >= 0)
+        assertEquals("/data/data/app/files/qemu", command[romDirIndex + 1])
+    }
+
+    @Test
+    fun `given storagePath on qcow2 image when buildCommand then attaches both disk and virtio 9p device`() {
+        val config = VmConfig(
+            arch = VmArch.ARM,
+            imagePath = "/data/data/app/files/vm-images/centos.qcow2",
+            storagePath = "/data/data/app/files/vm-storage/centos.qcow2",
+            storageMountTag = "custom0",
+        )
+
+        val command = engine.buildCommand(config)
+
+        assertTrue(command.contains("virtio-blk-pci,drive=hd0,bootindex=0"))
+        val fsdevIndex = command.indexOf("-fsdev")
+        assertTrue(fsdevIndex >= 0)
+        assertEquals(
+            "local,id=fsdev0,path=/data/data/app/files/vm-storage/centos.qcow2,security_model=none",
+            command[fsdevIndex + 1],
+        )
+        assertTrue(command.contains("virtio-9p-pci,fsdev=fsdev0,mount_tag=custom0"))
+    }
+
+    @Test
+    fun `given storagePath containing commas when buildCommand then escapes commas in fsdev path`() {
+        val config = VmConfig(
+            arch = VmArch.ARM,
+            imagePath = "/data/data/app/files/vm-images/debian,v1.qcow2",
+            storagePath = "/data/data/app/files/vm-storage/debian,v1,data",
+        )
+
+        val command = engine.buildCommand(config)
+
+        val fsdevIndex = command.indexOf("-fsdev")
+        assertTrue(fsdevIndex >= 0)
+        assertEquals(
+            "local,id=fsdev0,path=/data/data/app/files/vm-storage/debian,,v1,,data,security_model=none",
+            command[fsdevIndex + 1],
+        )
+    }
+
+    @Test
+    fun `given null storagePath when buildCommand then omits fsdev and virtio 9p args`() {
+        val config = VmConfig(
+            arch = VmArch.ARM,
+            imagePath = "/data/data/app/files/vm-images/alpine.img",
+            storagePath = null,
+        )
+
+        val command = engine.buildCommand(config)
+
+        assertTrue(command.none { it == "-fsdev" })
+        assertTrue(command.none { it.startsWith("virtio-9p-pci") })
+        assertTrue(command.none { it == "-L" })
+    }
+
+    @Test
+    fun `given kernel image with storagePath and no port mappings when checking runtime assets then stages efi virtio rom`() {
+        val withoutStorage = VmConfig(
+            arch = VmArch.ARM,
+            imagePath = "/data/data/app/files/vm-images/alpine.img",
+        )
+        val withStorage = withoutStorage.copy(
+            storagePath = "/data/data/app/files/vm-storage/alpine.img",
+        )
+
+        assertTrue(engine.requiredRuntimeAssets(withoutStorage).isEmpty())
+        assertEquals(
+            listOf(QemuEngine.EFI_VIRTIO_ROM_ASSET),
+            engine.requiredRuntimeAssets(withStorage),
+        )
+    }
+
+    @Test
+    fun `given missing storage directory when ensureStorageDirectory then creates writable directory`(@TempDir tempDir: Path) {
+        val storageDir = tempDir.resolve("vm-storage/alpine").toFile()
+        assertFalse(storageDir.exists())
+
+        assertTrue(QemuEngine.ensureStorageDirectory(storageDir))
+        assertTrue(storageDir.isDirectory)
     }
 }
 
