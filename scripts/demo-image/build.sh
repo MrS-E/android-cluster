@@ -28,6 +28,62 @@ SCRIPT_DIR="$(cd -- "${SCRIPT_PATH%/*}" && pwd -P)"
 
 HOST_OS="$(uname -s)"
 HOST_ARCH="$(uname -m)"
+
+if [[ "$HOST_OS" == Darwin ]]; then
+    [[ "$HOST_ARCH" == arm64 ]] || die "Apple Silicon macOS is required; detected $HOST_ARCH"
+    for required_command in podman tar mkdir mktemp chmod rm mv; do
+        command -v "$required_command" >/dev/null 2>&1 || die "Required command not found: $required_command"
+    done
+
+    OUTPUT_DIR="${DEMO_OUTPUT_DIR:-$SCRIPT_DIR/output}"
+    mkdir -p -- "$OUTPUT_DIR/qcow2"
+    OUTPUT_DIR="$(cd -- "$OUTPUT_DIR" && pwd -P)"
+    LOCAL_DISK_TMP=''
+    REMOTE_DIR=''
+
+    cleanup_machine_build() {
+        if [[ -n "$LOCAL_DISK_TMP" ]]; then
+            rm -f -- "$LOCAL_DISK_TMP"
+        fi
+        if [[ -n "$REMOTE_DIR" ]]; then
+            podman machine ssh -- "sudo -n rm -rf -- '$REMOTE_DIR'" \
+                || printf 'warning: Could not remove Podman Machine temporary directory: %s\n' "$REMOTE_DIR" >&2
+        fi
+    }
+    trap cleanup_machine_build EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+
+    podman machine ssh -- 'sudo -n true' \
+        || die 'Podman Machine must be running and allow passwordless sudo; start it with podman machine start'
+    REMOTE_DIR="$(podman machine ssh -- 'umask 077; mktemp -d /var/tmp/android-cluster-demo.XXXXXX')" \
+        || die 'Could not create a temporary directory in Podman Machine'
+    if [[ ! "$REMOTE_DIR" =~ ^/var/tmp/android-cluster-demo\.[[:alnum:]]+$ ]]; then
+        REMOTE_DIR=''
+        die 'Podman Machine returned an unexpected temporary directory path'
+    fi
+
+    tar -c -C "$SCRIPT_DIR" Containerfile config kernel-args.toml build.sh \
+        | podman machine ssh -- "tar -xf - -C '$REMOTE_DIR'" \
+        || die 'Could not transfer build files to Podman Machine'
+    podman machine ssh -- "umask 077; cat > '$REMOTE_DIR/demo.pub'" < "$KEY_FILE" \
+        || die 'Could not transfer the public key to Podman Machine'
+
+    printf 'Building inside Podman Machine\n'
+    podman machine ssh -- "sudo -n env TMPDIR='$REMOTE_DIR' DEMO_OUTPUT_DIR='$REMOTE_DIR/output' /bin/bash '$REMOTE_DIR/build.sh' '$REMOTE_DIR/demo.pub'" \
+        || die 'Build failed inside Podman Machine'
+
+    LOCAL_DISK_TMP="$(mktemp "$OUTPUT_DIR/qcow2/.disk.qcow2.XXXXXX")"
+    podman machine ssh -- "sudo -n cat '$REMOTE_DIR/output/qcow2/disk.qcow2'" > "$LOCAL_DISK_TMP" \
+        || die 'Could not transfer the disk from Podman Machine'
+    [[ -s "$LOCAL_DISK_TMP" ]] || die 'Podman Machine returned an empty disk image'
+    chmod 0644 "$LOCAL_DISK_TMP"
+    mv -f -- "$LOCAL_DISK_TMP" "$OUTPUT_DIR/qcow2/disk.qcow2"
+    LOCAL_DISK_TMP=''
+    printf 'QCOW2 image: %s\n' "$OUTPUT_DIR/qcow2/disk.qcow2"
+    exit 0
+fi
+
 [[ "$HOST_OS" == Linux ]] || die "Build on native ARM64 Linux; detected $HOST_OS"
 [[ "$HOST_ARCH" == aarch64 ]] || die "Build on native aarch64 Linux; detected $HOST_ARCH"
 [[ "$(id -u)" == 0 ]] || die "Run with rootful Podman (for example, sudo $0 SSH_PUBLIC_KEY_FILE)"

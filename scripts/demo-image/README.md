@@ -12,14 +12,17 @@ and offers a non-root serial shell.
 
 ## Requirements
 
-Build on native `aarch64` Linux with rootful Podman. The build script refuses
-macOS, x86-64, and rootless Podman; a Podman Linux VM on a Mac is not the
-documented build target. The build host also needs `bash`, `ssh-keygen` (OpenSSH),
-OpenSSL, Python 3, and standard `mktemp`/file utilities. Internet access is
-needed to pull CentOS Stream 10 and the pinned bootc image builder. Allow several
-gigabytes of free storage for container layers and the disk image. Install
-`qemu-img` if you want to inspect the resulting disk; install Android `adb` only
-if you plan to transfer it with the Android Debug Bridge.
+Build on native `aarch64` Linux with rootful Podman, or on Apple Silicon macOS
+with an ARM64 Podman Machine. The Linux environment needs `bash`, `ssh-keygen`
+(OpenSSH), OpenSSL, Python 3, and standard `mktemp`/file utilities. On macOS,
+the default Podman Machine must be running, have those tools and `tar`, and
+allow passwordless `sudo` inside the VM. The Mac needs Podman, `bash`, `tar`,
+and standard file utilities. Internet access is needed to pull CentOS Stream 10
+and the pinned bootc image builder. Allow several gigabytes of free storage in
+the Linux host or VM and on the Mac for the copied disk. Install `qemu-img` to
+inspect the resulting disk, and Android `adb` only if you plan to transfer it
+with the Android Debug Bridge. Intel Macs, x86-64 Linux, and native rootless
+builds are not supported.
 
 The image builder is referenced by an immutable multi-architecture manifest
 digest in `build.sh`, rather than the registry's mutable `latest` tag. The
@@ -43,11 +46,35 @@ given `sudo` access.
 
 ## Build the disk
 
-From the repository root, run the wrapper with rootful Podman and the public key:
+On native ARM64 Linux, run the wrapper from the repository root with rootful
+Podman and the public key:
 
 ```bash
 sudo scripts/demo-image/build.sh "$HOME/.ssh/android-cluster-demo.pub"
 ```
+
+On Apple Silicon, install Podman and initialize its default machine if needed,
+giving it enough disk and memory. Start an existing machine without reinitializing
+it. For example, to create a new default machine and start it:
+
+```bash
+podman machine init --cpus 4 --memory 8192 --disk-size 60
+podman machine start
+```
+
+Run the wrapper on the Mac **without** `sudo`:
+
+```bash
+scripts/demo-image/build.sh "$HOME/.ssh/android-cluster-demo.pub"
+```
+
+The wrapper copies only the build files and public key to a private directory in
+the VM, runs the Linux build there with `sudo -n` and rootful Podman, then copies
+the disk back. It does not require the project directory to be shared with the
+VM or change the machine's default rootless/rootful connection. The VM's `/var`
+filesystem needs space for the temporary disk as well as container storage.
+Temporary files are removed on exit; if the VM becomes unreachable, remove the
+reported temporary directory inside the VM after restoring access.
 
 The wrapper checks the host architecture and rootful Podman storage, builds the
 reusable service image, then invokes the pinned privileged bootc image builder
@@ -155,9 +182,9 @@ by another workload.
 ## Validation status
 
 The shell wrapper passes `bash -n` and `test-build.sh`, which exercises host and
-key validation, command argument handling, private config permissions and
-cleanup, and failure propagation with stubbed commands. This validation
-environment is macOS rather than native ARM64 Linux, so the image build, `qemu-img`
-inspection, and guest boot/service checks were not run. `adb` reported no attached
-devices, so Android import, serial-console behavior, and LAN forwarding were not
-verified here.
+key validation, command argument handling, private config permissions, VM
+transfer and cleanup, and failure handling with stubbed commands. On Apple
+Silicon with Podman 6.1.4, a real Podman Machine build completed and `qemu-img`
+reported a non-corrupt QCOW2 disk with a 10 GiB virtual size. Guest boot and
+service checks were not run. No Android device was attached, so import,
+serial-console behavior, and LAN forwarding were not verified here.
