@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<zone target="DROP">
+  <short>Android Cluster demo</short>
+  <description>Only SSH and the demo HTTP service are reachable on the guest network.</description>
+  <service name="ssh"/>
+  <port port="8080" protocol="tcp"/>
+</zone>

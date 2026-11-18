@@ -1,0 +1,26 @@
+[Unit]
+Description=Android Cluster demo HTTP page
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=demo
+Group=demo
+WorkingDirectory=/usr/share/demo-http
+ExecStart=/usr/bin/python3 -m http.server 8080 --bind 0.0.0.0 --directory /usr/share/demo-http
+Restart=on-failure
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

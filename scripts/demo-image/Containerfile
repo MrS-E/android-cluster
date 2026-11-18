@@ -1,0 +1,22 @@
+FROM quay.io/centos-bootc/centos-bootc:stream10
+
+RUN dnf install -y \
+        firewalld \
+        NetworkManager \
+        openssh-server \
+        python3 \
+    && dnf clean all
+
+COPY config/demo-ethernet.nmconnection /etc/NetworkManager/system-connections/demo-ethernet.nmconnection
+COPY config/public.xml /etc/firewalld/zones/public.xml
+COPY config/sshd-demo.conf /etc/ssh/sshd_config.d/20-demo.conf
+COPY config/serial-getty-ttyAMA0.conf /etc/systemd/system/serial-getty@ttyAMA0.service.d/override.conf
+COPY config/demo-http.service /etc/systemd/system/demo-http.service
+COPY config/index.html /usr/share/demo-http/index.html
+
+RUN chmod 0600 /etc/NetworkManager/system-connections/demo-ethernet.nmconnection \
+    && systemctl enable NetworkManager.service \
+        firewalld.service \
+        sshd.service \
+        demo-http.service \
+        serial-getty@ttyAMA0.service

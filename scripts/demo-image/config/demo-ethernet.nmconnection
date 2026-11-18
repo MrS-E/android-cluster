@@ -1,0 +1,13 @@
+[connection]
+id=demo-ethernet
+type=ethernet
+autoconnect=true
+match-device=type:ethernet
+
+[ethernet]
+
+[ipv4]
+method=auto
+
+[ipv6]
+method=disabled
