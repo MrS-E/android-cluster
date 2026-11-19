@@ -6,8 +6,10 @@ import androidx.lifecycle.viewModelScope
 import ch.stix.android_cluster.data.BatteryOptimizationManager
 import ch.stix.android_cluster.data.ImageRepository
 import ch.stix.android_cluster.data.SettingsRepository
+import ch.stix.android_cluster.data.StorageRepository
 import ch.stix.android_cluster.data.VmImage
 import ch.stix.android_cluster.data.VmRepository
+import ch.stix.android_cluster.data.VmStorageInfo
 import ch.stix.android_cluster.engine.PortMapping
 import ch.stix.android_cluster.engine.VmArch
 import ch.stix.android_cluster.engine.VmConfig
@@ -32,11 +34,13 @@ data class ClusterUiState(
     val consoleLines: List<String> = emptyList(),
     val batteryExempt: Boolean = false,
     val charging: Boolean = false,
+    val storageInfo: VmStorageInfo? = null,
 ) {
     val selectedImageResolved: VmImage? get() = images.firstOrNull { it.name == selectedImage }
     val hasImage: Boolean get() = selectedImageResolved != null
     val isRunning: Boolean get() = vmState is VmState.Running
     val canStart: Boolean get() = engineInstalled && hasImage && !isRunning
+    val canChangeStorage: Boolean get() = hasImage && !isRunning && storageInfo?.isSyncing != true
 }
 
 /**
@@ -50,11 +54,12 @@ class ClusterViewModel @Inject constructor(
     private val imageRepository: ImageRepository,
     private val settingsRepository: SettingsRepository,
     private val batteryManager: BatteryOptimizationManager,
+    private val storageRepository: StorageRepository,
 ) : ViewModel() {
 
     private val _transientState = MutableStateFlow(Transient())
 
-    val uiState: StateFlow<ClusterUiState> = combine(
+    private val baseUiState: StateFlow<ClusterUiState> = combine(
         combine(vmRepository.state, vmRepository.consoleLines) { state, lines -> state to lines },
         imageRepository.images,
         settingsRepository.settings,
@@ -72,6 +77,17 @@ class ClusterViewModel @Inject constructor(
             batteryExempt = transient.batteryExempt,
             charging = transient.charging,
         )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
+        initialValue = ClusterUiState(),
+    )
+
+    val uiState: StateFlow<ClusterUiState> = combine(
+        baseUiState,
+        storageRepository.storageInfo,
+    ) { state, storageInfo ->
+        state.copy(storageInfo = storageInfo)
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(STOP_TIMEOUT_MS),
@@ -131,10 +147,44 @@ class ClusterViewModel @Inject constructor(
 
     fun clearMappingError() = settingsRepository.clearMappingError()
 
+    fun setStorageFolder(imageName: String, uri: Uri) {
+        if (!canChangeStorageFor(imageName)) return
+        viewModelScope.launch {
+            if (canChangeStorageFor(imageName)) {
+                storageRepository.setCustomStorageFolder(imageName, uri)
+            }
+        }
+    }
+
+    fun resetStorageFolder(imageName: String) {
+        if (!canChangeStorageFor(imageName)) return
+        viewModelScope.launch {
+            if (canChangeStorageFor(imageName)) {
+                storageRepository.clearCustomStorageFolder(imageName)
+            }
+        }
+    }
+
+    fun clearStorage(imageName: String) {
+        if (!canChangeStorageFor(imageName)) return
+        viewModelScope.launch {
+            if (canChangeStorageFor(imageName)) {
+                storageRepository.clearStorage(imageName)
+            }
+        }
+    }
+
+    fun clearStorageError(imageName: String) {
+        storageRepository.clearSyncError(imageName)
+    }
+
     fun sendConsoleInput(text: String) {
         if (text.isEmpty()) return
         vmRepository.sendInput("$text\n")
     }
+
+    private fun canChangeStorageFor(imageName: String): Boolean =
+        uiState.value.selectedImage == imageName && uiState.value.canChangeStorage
 
     /** Called after the user returns from the system exemption dialog. */
     fun refreshBatteryState() = refreshEnvironment()

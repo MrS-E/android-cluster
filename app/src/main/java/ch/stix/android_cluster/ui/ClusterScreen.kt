@@ -21,6 +21,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -34,6 +37,7 @@ import ch.stix.android_cluster.ui.components.BatteryCard
 import ch.stix.android_cluster.ui.components.ImageCard
 import ch.stix.android_cluster.ui.components.PortMappingCard
 import ch.stix.android_cluster.ui.components.StatusCard
+import ch.stix.android_cluster.ui.components.StorageCard
 import ch.stix.android_cluster.ui.theme.AndroidclusterTheme
 import ch.stix.android_cluster.ui.theme.Dimens
 
@@ -52,6 +56,17 @@ fun ClusterScreen(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri: Uri? ->
         uri?.let { viewModel.importImage(it) }
+    }
+
+    var storagePickerImage by rememberSaveable { mutableStateOf<String?>(null) }
+    val storageFolderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree(),
+    ) { uri: Uri? ->
+        val imageName = storagePickerImage
+        storagePickerImage = null
+        if (imageName != null && uri != null) {
+            viewModel.setStorageFolder(imageName, uri)
+        }
     }
 
     val exemptionLauncher = rememberLauncherForActivityResult(
@@ -117,6 +132,24 @@ fun ClusterScreen(
                     imagePicker.launch(arrayOf("*/*"))
                 },
             )
+
+            state.storageInfo
+                ?.takeIf { it.imageName == state.selectedImage }
+                ?.let { storageInfo ->
+                    StorageCard(
+                        info = storageInfo,
+                        enabled = state.canChangeStorage,
+                        onChooseFolder = {
+                            if (state.canChangeStorage) {
+                                storagePickerImage = storageInfo.imageName
+                                storageFolderPicker.launch(null)
+                            }
+                        },
+                        onResetFolder = { viewModel.resetStorageFolder(storageInfo.imageName) },
+                        onClearStorage = { viewModel.clearStorage(storageInfo.imageName) },
+                        onClearError = { viewModel.clearStorageError(storageInfo.imageName) },
+                    )
+                }
 
             PortMappingCard(
                 mappings = state.portMappings,
