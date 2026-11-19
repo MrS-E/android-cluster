@@ -12,6 +12,7 @@ COPY config/public.xml /etc/firewalld/zones/public.xml
 COPY config/sshd-demo.conf /etc/ssh/sshd_config.d/20-demo.conf
 COPY config/serial-getty-ttyAMA0.conf /etc/systemd/system/serial-getty@ttyAMA0.service.d/override.conf
 COPY config/demo-http.service /etc/systemd/system/demo-http.service
+COPY config/android-cluster-storage.service /etc/systemd/system/android-cluster-storage.service
 COPY config/index.html /usr/share/demo-http/index.html
 
 RUN chmod 0600 /etc/NetworkManager/system-connections/demo-ethernet.nmconnection \
@@ -19,4 +20,5 @@ RUN chmod 0600 /etc/NetworkManager/system-connections/demo-ethernet.nmconnection
         firewalld.service \
         sshd.service \
         demo-http.service \
+        android-cluster-storage.service \
         serial-getty@ttyAMA0.service

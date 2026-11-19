@@ -123,6 +123,19 @@ virtio NIC when mappings exist and enforces at least 1 GiB RAM for QCOW2 boots.
 The disk includes `console=ttyAMA0` in its boot configuration because the app
 does not add kernel arguments to QCOW2 boots.
 
+## Use the shared storage mount
+
+The app exposes each image's persistent storage as a virtio 9p share with mount
+tag `host0`. The demo image enables `android-cluster-storage.service`, which
+mounts that tag at `/var/mnt/storage` using `access=any`; the unprivileged
+`demo` account can write there without changing ownership on the Android host.
+The service has a short start timeout and is not required for the boot target,
+so a missing 9p device or guest kernel support does not prevent the VM from
+booting. The app's storage card can instead bind a SAF shared folder; its files
+are synchronized to the per-image local storage around VM start and stop. Using
+the clear-local-storage action removes only the app's local copy and does not
+delete files in the selected Android folder.
+
 ## Check HTTP and SSH from the LAN
 
 Find the phone's current LAN IP address and run these commands from another

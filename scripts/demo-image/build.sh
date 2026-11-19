@@ -56,12 +56,13 @@ if [[ "$HOST_OS" == Darwin ]]; then
 
     podman machine ssh -- 'sudo -n true' \
         || die 'Podman Machine must be running and allow passwordless sudo; start it with podman machine start'
-    REMOTE_DIR="$(podman machine ssh -- 'umask 077; mktemp -d /var/tmp/android-cluster-demo.XXXXXX')" \
+    REMOTE_DIR_CANDIDATE="$(podman machine ssh -- 'umask 077; mktemp -d /var/tmp/android-cluster-demo.XXXXXX')" \
         || die 'Could not create a temporary directory in Podman Machine'
-    if [[ ! "$REMOTE_DIR" =~ ^/var/tmp/android-cluster-demo\.[[:alnum:]]+$ ]]; then
-        REMOTE_DIR=''
+    if [[ ! "$REMOTE_DIR_CANDIDATE" =~ ^/var/tmp/android-cluster-demo\.[[:alnum:]]+$ ]]; then
         die 'Podman Machine returned an unexpected temporary directory path'
     fi
+    REMOTE_DIR="$REMOTE_DIR_CANDIDATE"
+    unset REMOTE_DIR_CANDIDATE
 
     tar -c -C "$SCRIPT_DIR" Containerfile config kernel-args.toml build.sh \
         | podman machine ssh -- "tar -xf - -C '$REMOTE_DIR'" \

@@ -1,0 +1,13 @@
+[Unit]
+Description=Mount Android Cluster shared storage
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/mkdir -p /var/mnt/storage
+ExecStart=/usr/bin/mount -t 9p -o trans=virtio,version=9p2000.L,access=any host0 /var/mnt/storage
+RemainAfterExit=yes
+TimeoutStartSec=5s
+
+[Install]
+WantedBy=multi-user.target

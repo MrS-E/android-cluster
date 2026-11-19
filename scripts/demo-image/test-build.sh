@@ -3,6 +3,9 @@ set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "${BASH_SOURCE[0]%/*}" && pwd -P)"
 BUILD_SCRIPT="$SCRIPT_DIR/build.sh"
+STORAGE_SERVICE="$SCRIPT_DIR/config/android-cluster-storage.service"
+python3 -c 'import pathlib,sys; service=pathlib.Path(sys.argv[1]).read_text(); image=pathlib.Path(sys.argv[2]).read_text(); assert "Type=oneshot" in service; assert "trans=virtio,version=9p2000.L,access=any host0 /var/mnt/storage" in service; assert "TimeoutStartSec=5s" in service; assert "WantedBy=multi-user.target" in service; assert "COPY config/android-cluster-storage.service /etc/systemd/system/android-cluster-storage.service" in image; assert "android-cluster-storage.service" in image' \
+    "$STORAGE_SERVICE" "$SCRIPT_DIR/Containerfile"
 TEST_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/demo-image-test.XXXXXX")"
 trap 'rm -rf -- "$TEST_ROOT"' EXIT
 
@@ -42,7 +45,7 @@ write_stub podman \
     'printf "__CALL_END__\0" >> "$DEMO_TEST_PODMAN_ARGS"' \
     'if [[ "$1" == machine && "$2" == ssh ]]; then' \
     '  shift 2; [[ "${1:-}" != -- ]] || shift' \
-    '  if [[ -n "${DEMO_TEST_REMOTE_RESPONSE:-}" && "$*" == *"mktemp -d"* ]]; then printf "%s\n" "$DEMO_TEST_REMOTE_RESPONSE"; exit 31; fi' \
+    '  if [[ -n "${DEMO_TEST_REMOTE_RESPONSE:-}" && "$*" == *"mktemp -d"* ]]; then printf "%s\n" "$DEMO_TEST_REMOTE_RESPONSE"; exit 0; fi' \
     '  if [[ -n "${DEMO_TEST_FAIL_SSH:-}" && "$*" == *"$DEMO_TEST_FAIL_SSH"* ]]; then exit 31; fi' \
     '  DEMO_TEST_VM=1 /bin/bash -c "$*"' \
     '  exit $?' \
@@ -133,7 +136,7 @@ assert_fails 'Apple Silicon' env PATH="$FULL_PATH" DEMO_TEST_MAC_ARCH=x86_64 /bi
 assert_fails 'Podman Machine must be running' env PATH="$FULL_PATH" DEMO_TEST_FAIL_SSH='sudo -n true' /bin/bash "$BUILD_SCRIPT" "$TEST_ROOT/demo key.pub"
 assert_fails 'native aarch64 Linux' env PATH="$FULL_PATH" DEMO_TEST_MACHINE=x86_64 /bin/bash "$BUILD_SCRIPT" "$TEST_ROOT/demo key.pub"
 : > "$DEMO_TEST_PODMAN_ARGS"
-assert_fails 'Could not create a temporary directory' env PATH="$FULL_PATH" DEMO_TEST_REMOTE_RESPONSE='/tmp/unsafe' DEMO_TEST_FAIL_SSH='rm -rf' /bin/bash "$BUILD_SCRIPT" "$TEST_ROOT/demo key.pub"
+assert_fails 'unexpected temporary directory path' env PATH="$FULL_PATH" DEMO_TEST_REMOTE_RESPONSE='/tmp/unsafe' DEMO_TEST_FAIL_SSH='rm -rf' /bin/bash "$BUILD_SCRIPT" "$TEST_ROOT/demo key.pub"
 python3 -c 'import pathlib,sys; assert b"rm -rf" not in pathlib.Path(sys.argv[1]).read_bytes()' "$DEMO_TEST_PODMAN_ARGS"
 : > "$DEMO_TEST_PODMAN_ARGS"
 run_build > "$TEST_ROOT/mac-success.stdout"
