@@ -7,6 +7,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import java.io.File
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -14,28 +15,39 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
-/** Persisted user configuration: the selected image and the port mappings. */
+/** Persisted user configuration: the selected image, port mappings, and per-image custom storage URIs. */
 @Serializable
 data class AppSettings(
-    val selectedImage: String? = null,
-    val portMappings: List<PortMapping> = emptyList(),
+    @SerialName("selectedImage") val selectedImage: String? = null,
+    @SerialName("portMappings") val portMappings: List<PortMapping> = emptyList(),
+    @SerialName("customStorageUris") val customStorageUris: Map<String, String> = emptyMap(),
 )
 
 /**
- * Persists the selected VM image and the host-to-guest port mappings as JSON in
- * `filesDir`, so the configuration survives app restarts.
+ * Persists the selected VM image, host-to-guest port mappings, and custom
+ * storage folder URIs as JSON in `filesDir`, so configuration survives app restarts.
  */
 @Singleton
-class SettingsRepository @Inject constructor(
-    @ApplicationContext private val context: Context,
+class SettingsRepository internal constructor(
+    private val filesDir: File,
+    ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
+    @Inject
+    constructor(
+        @ApplicationContext context: Context,
+    ) : this(
+        filesDir = context.filesDir,
+        ioDispatcher = Dispatchers.IO,
+    )
+
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
 
     private val _settings = MutableStateFlow(AppSettings())
     val settings: StateFlow<AppSettings> = _settings.asStateFlow()
@@ -50,6 +62,30 @@ class SettingsRepository @Inject constructor(
 
     fun selectImage(name: String?) {
         update { it.copy(selectedImage = name) }
+    }
+
+    /** Returns the persisted custom SAF tree URI for [imageName], or null when using default storage. */
+    fun customStorageUriFor(imageName: String): String? =
+        _settings.value.customStorageUris[imageName]
+
+    /** Persists a custom SAF tree URI for [imageName], or clears it when [uriString] is blank. */
+    fun setCustomStorageUri(imageName: String, uriString: String) {
+        if (imageName.isBlank()) return
+        if (uriString.isBlank()) {
+            clearCustomStorageUri(imageName)
+            return
+        }
+        update { current ->
+            current.copy(customStorageUris = current.customStorageUris + (imageName to uriString))
+        }
+    }
+
+    /** Removes any custom SAF tree URI override for [imageName], reverting to the default folder. */
+    fun clearCustomStorageUri(imageName: String) {
+        if (imageName !in _settings.value.customStorageUris) return
+        update { current ->
+            current.copy(customStorageUris = current.customStorageUris - imageName)
+        }
     }
 
     /**
@@ -95,10 +131,13 @@ class SettingsRepository @Inject constructor(
     }
 
     private fun write(settings: AppSettings) {
-        runCatching { settingsFile().writeText(json.encodeToString(settings)) }
+        runCatching {
+            filesDir.mkdirs()
+            settingsFile().writeText(json.encodeToString(settings))
+        }
     }
 
-    private fun settingsFile(): File = File(context.filesDir, SETTINGS_FILE)
+    private fun settingsFile(): File = File(filesDir, SETTINGS_FILE)
 
     private companion object {
         const val SETTINGS_FILE = "settings.json"

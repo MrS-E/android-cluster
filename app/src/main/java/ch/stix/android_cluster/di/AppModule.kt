@@ -1,6 +1,8 @@
 package ch.stix.android_cluster.di
 
 import android.content.Context
+import ch.stix.android_cluster.data.AndroidSafTreeDataSource
+import ch.stix.android_cluster.data.SafTreeDataSource
 import ch.stix.android_cluster.engine.QemuEngine
 import ch.stix.android_cluster.engine.VmEngine
 import dagger.Module
@@ -24,4 +26,9 @@ object AppModule {
         assetManager = context.assets,
         ioDispatcher = Dispatchers.IO,
     )
+
+    @Provides
+    @Singleton
+    fun provideSafTreeDataSource(@ApplicationContext context: Context): SafTreeDataSource =
+        AndroidSafTreeDataSource(context)
 }

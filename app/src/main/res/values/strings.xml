@@ -43,6 +43,22 @@
     <string name="image_size_mb">%1$s MB</string>
     <string name="image_size_kb">%1$s KB</string>
 
+    <!-- Persistent VM storage -->
+    <string name="storage_card_title">VM storage</string>
+    <string name="storage_folder_default">Private app storage</string>
+    <string name="storage_folder_custom">Shared folder: %1$s</string>
+    <string name="storage_mount_point">Guest mount tag: %1$s (mounted at /var/mnt/storage in the demo image)</string>
+    <string name="storage_items_summary">%1$d files, %2$s</string>
+    <string name="storage_syncing">Synchronizing shared-folder contents…</string>
+    <string name="storage_sync_error">Storage sync error: %1$s</string>
+    <string name="action_choose_storage_folder">Choose shared folder</string>
+    <string name="action_reset_storage_folder">Use private storage</string>
+    <string name="action_clear_storage">Clear local storage</string>
+    <string name="action_dismiss_storage_error">Dismiss error</string>
+    <string name="storage_clear_confirmation_title">Clear local storage?</string>
+    <string name="storage_clear_confirmation_message">This deletes the app’s local storage copy. Files in the selected shared folder are not deleted and may be synchronized again.</string>
+    <string name="action_cancel">Cancel</string>
+
     <!-- Ports card -->
     <string name="ports_card_title">Port mappings</string>
     <string name="ports_empty">No port mappings. Guest services are not reachable from the LAN.</string>
