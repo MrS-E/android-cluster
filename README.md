@@ -9,7 +9,7 @@ guest services to the local LAN through user-mode port forwarding.
 | Path | Purpose |
 | --- | --- |
 | `app/src/main/java/ch/stix/android_cluster/engine` | Architecture-agnostic VM engine (`VmEngine`, `VmArch`, `QemuEngine`). |
-| `app/src/main/java/ch/stix/android_cluster/data` | Repositories: VM lifecycle, image import, settings, battery state. |
+| `app/src/main/java/ch/stix/android_cluster/data` | Repositories: VM lifecycle, image import, settings, battery state, and persistent storage sync. |
 | `app/src/main/java/ch/stix/android_cluster/service` | `QemuForegroundService` — hosts the VM, holds the wake lock, shows the notification. |
 | `app/src/main/java/ch/stix/android_cluster/ui` | Compose UI (`ClusterScreen`, `ConsolePanel`) and `ClusterViewModel`. |
 | `scripts/build-qemu-android.sh` | Cross-compiles `qemu-system-aarch64` for Android. |
@@ -123,3 +123,14 @@ Each configured port mapping becomes one `hostfwd` rule, so a mapping like
 `31415 → 22` makes the guest SSH reachable from any LAN device at
 `<phone-ip>:31415`. Intended operation is with the phone connected to power,
 with battery optimization disabled for the app.
+
+Each imported image also has a persistent storage directory exposed to the guest
+over QEMU virtio 9p using mount tag `host0`. In the bundled demo image, the
+`android-cluster-storage.service` mounts it at `/var/mnt/storage` and uses
+`access=any` so the unprivileged `demo` account can read and write without
+changing host-side ownership. This guest mount is optional: if the guest lacks
+9p support or the share is unavailable, the service fails independently and
+the VM continues booting. The app can optionally synchronize storage with a
+user-selected Android shared folder before VM start and after it stops; clear
+local storage only removes the app's copy and leaves external folder contents
+intact.
